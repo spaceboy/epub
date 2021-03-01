@@ -1,0 +1,19 @@
+{
+    "name": "spaceboy/epub",
+    "description": "Epub e-book generator",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Spaceboy"
+        }
+    ],
+    "keywords": ["spaceboy", "php", "Epub", "e-book"],
+    "autoload": {
+        "classmap": ["src"]
+    },
+    "require": {
+        "php": ">= 7.2",
+        "spaceboy/space-tools": "^1.2"
+    }
+}
