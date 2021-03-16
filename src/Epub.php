@@ -74,6 +74,12 @@ FOOTER;
     /** @var integer flags for converting HTML entities */
     private $decodeEntFlags = ENT_QUOTES | ENT_HTML401;
 
+    /** @var string|null content title */
+    private ?string $contentTitle = null;
+
+    /** @var bool content position (true = at beginning; false = at the end of publication) */
+    private bool $contentAtBegin;
+
     const   META_INF    = 'META-INF';
     const   OEBPS       = 'OEBPS';
     const   FONTS       = 'Fonts';
@@ -86,7 +92,7 @@ FOOTER;
      * Class constructor.
      * @param string $tmpDir cesta k pracovnímu adresáři
      */
-    public function __construct($tmpDir)
+    public function __construct(string $tmpDir)
     {
         $this->uuid = $this->getUUID();
         $this->tmpDir = $this->createWorkspace($tmpDir);
@@ -98,6 +104,352 @@ FOOTER;
     public function __destruct()
     {
         $this->clearTemp();
+    }
+
+    /**
+     * Set publication description.
+     * @param string $title
+     * @return Epub
+     */
+    public function setDescription($description): self
+    {
+        $this->description = $description;
+        return $this;
+    }
+
+    /**
+     * Set publisher.
+     * @param string $publisher
+     * @return Epub
+     */
+    public function setPublisher($publisher): self
+    {
+        $this->publisher = $publisher;
+        return $this;
+    }
+
+    /**
+     * Set publication title.
+     * @param string $title
+     * @return Epub
+     */
+    public function setTitle($title): self
+    {
+        $this->title = $title;
+        return $this;
+    }
+
+    /**
+     * Add publication creator.
+     * @param string $title
+     * @return Epub
+     */
+    public function addCreator($role, $name, $nameFileAs = null): self
+    {
+        $this->creators[] = new Creator($role, $name, $nameFileAs);
+        return $this;
+    }
+
+    /**
+     * Set publication language.
+     * @param string $language
+     * @return Epub
+     */
+    public function setLanguage($language): self
+    {
+        $this->language = $language;
+        return $this;
+    }
+
+    /**
+     * Add book into publication.
+     * @param string $bookTitle
+     * @return Book
+     */
+    public function addBook($bookTitle): Book
+    {
+        $book = new Book($this, sizeof($this->books) + 1, $bookTitle);
+        $this->books[] = $book;
+        return $book;
+    }
+
+    /**
+     * Get book list.
+     * @return array
+     */
+    public function getBooks(): array
+    {
+        return $this->books;
+    }
+
+    /**
+     * Add image (from file).
+     * @param string filename
+     * @return Epub
+     * @throws EpubException
+     */
+    public function addImage(string $fileName): self
+    {
+        $this->images[] = $this->addFile($fileName, static::IMAGES);
+        return $this;
+    }
+
+    /**
+     * Add cover image (from file).
+     * @param string filename
+     * @param string cover title
+     * @return Epub
+     * @throws EpubException
+     */
+    public function addCover(string $fileName, string $coverTitle = null): self
+    {
+        $this->cover    = $this->addFile($fileName, static::IMAGES);
+        if ($coverTitle) {
+            $this->coverTitle   = $coverTitle;
+        }
+        return $this;
+    }
+
+    /**
+     * Add CSS file.
+     * @param string filename
+     * @return Epub
+     * @throws EpubException
+     */
+    public function addStyle(string $fileName): self
+    {
+        $this->styles[] = $this->addFile($fileName, static::STYLES);
+        return $this;
+    }
+
+    /**
+     * Add font file.
+     * @param string filename
+     * @return Epub
+     * @throws EpubException
+     */
+    public function addFont(string $fileName): self
+    {
+        $this->fonts[]  = $this->addFile($fileName, static::FONTS);
+        return $this;
+    }
+
+    /**
+     * Add subject (keyword).
+     * @param string $subject
+     * @return Epub
+     */
+    public function addSubject(string $subject): self
+    {
+        $this->subjects[] = $subject;
+        return $this;
+    }
+
+    /**
+     * Set chapter wrapper header from HTML.
+     * @param string $html HTML text hlavičky
+     * @return Epub
+     */
+    public function setChapterHeader(string $html): self
+    {
+        $this->chapterHeader    = $html;
+        return $this;
+    }
+
+    /**
+     * Set chapter wrapper header from file.
+     * @param string $fileName
+     * @return Epub
+     * @throws EpubException
+     */
+    public function setChapterHeaderFile(string $fileName): self
+    {
+        if (!is_file($fileName) || (!is_readable($fileName))) {
+            throw new EpubException("Header is not file or is not readable ({$fileName}).");
+        }
+        return $this->setChapterHeader(file_get_contents($fileName));
+    }
+
+    /**
+     * Set chapter footer from HTML.
+     * @param string $html
+     * @return Epub
+     */
+    public function setChapterFooter(string $html): self
+    {
+        $this->chapterFooter = $html;
+        return $this;
+    }
+
+    /**
+     * Set chapter wrapper footer from file.
+     * @param string $fileName
+     * @return Epub
+     * @throws EpubException
+     */
+    public function setChapterFooterFile($fileName): self
+    {
+        if (!is_file($fileName) || (!is_readable($fileName))) {
+            throw new EpubException("Footer is not file or is not readable ({$fileName}).");
+        }
+        return $this->setChapterFooter(file_get_contents($fileName));
+    }
+
+    /**
+     * Get working directory path.
+     * @return string
+     */
+    public function getTempDir(): string
+    {
+        return $this->tmpDir;
+    }
+
+    /**
+     * Clear working directory.
+     */
+    public function clearTemp(): void
+    {
+        SpaceTools::purgeDir($this->getTempDir());
+    }
+
+    /**
+     * Set title and position of publication content.
+     * @param string $title
+     * @param bool $atBegin
+     * @return Epub
+     */
+    public function placeContent(string $title, bool $atBegin = false): self
+    {
+        $this->contentTitle = $title;
+        $this->contentAtBegin = $atBegin;
+        return $this;
+    }
+
+    /**
+     * Create epub.
+     * @param string $outputFile
+     */
+    public function save(string $outputFile): void
+    {
+        // Create HTML content.
+        if ($this->contentTitle !== null) {
+            $this->createHtmlContent();
+        }
+
+        // Convert HTML entities:
+        if ($this->decodeEntities) {
+            $this->entitiesDecode();
+        }
+
+        // Wrap chapter files:
+        if ($this->chapterHeader || $this->chapterFooter) {
+            $this->wrapChapter();
+        }
+
+        // Create cover, TOC, content:
+        $this->createCoverFile();
+        $this->createTocFile();
+        $this->createContentFile();
+
+        // Create epub:
+        $this->createArchive($outputFile);
+
+        // ebook-convert source.epub .mobi --share-not-sync
+    }
+
+    /**
+     * Add file (general).
+     * @param string filename
+     * @param string dir
+     * @return string
+     * @throws EpubException
+     */
+    private function addFile(string $fileName, $dir): string
+    {
+        if (!is_file($fileName) || (!is_readable($fileName))) {
+            throw new EpubException("Not file or not readable file ({$fileName}).");
+        }
+        $name   = $dir . DIRECTORY_SEPARATOR . basename($fileName);
+        if (!copy($fileName, $this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . $name)) {
+            throw new EpubException("Can not copy file to temporary directory ({$fileName}).");
+        }
+        return $name;
+    }
+
+    /**
+     * Decode HTML entities in chapter file(s).
+     */
+    private function entitiesDecode(): void
+    {
+        foreach ($this->books AS $book) {
+            foreach ($book->getChapters() AS $chapter) {
+                $fileName   = $this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . static::TEXTS . DIRECTORY_SEPARATOR . $chapter->getFileName();
+                $fileCont   = file_get_contents($fileName);
+                file_put_contents(
+                    $fileName,
+                    html_entity_decode($fileCont)
+                );
+            }
+        }
+    }
+
+    /**
+     * Wrap chapter file(s) with header and/or footer.
+     */
+    private function wrapChapter(): void
+    {
+        foreach ($this->books AS $book) {
+            foreach ($book->getChapters() AS $chapter) {
+                if (!$chapter->getWrap()) {
+                    continue;
+                }
+                $fileName   = $this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . static::TEXTS . DIRECTORY_SEPARATOR . $chapter->getFileName();
+                $fileCont   = file_get_contents($fileName);
+                file_put_contents(
+                    $fileName,
+                    ($this->chapterHeader ?: '') . $fileCont . ($this->chapterFooter ?: '')
+                );
+            }
+        }
+    }
+
+    /**
+     * Add whole directory to ZIP archive.
+     * @param \ZipArchive &$$archive
+     * @param string $dirName
+     * @param ?string $root
+     */
+    private function includeDir(\ZipArchive &$archive, string $dirName, string $root = ''): void
+    {
+        $dir = opendir($dirName);
+        while ($fileName = readdir($dir)) {
+            if (in_array($fileName, ['.', '..'])) {
+                continue;
+            }
+            $fullName = $dirName . DIRECTORY_SEPARATOR . $fileName;
+            if (is_dir($fullName)) {
+                $this->includeDir($archive, $fullName, $root . DIRECTORY_SEPARATOR . $fileName);
+            } else {
+                $archive->addFile($fullName, substr($root . DIRECTORY_SEPARATOR . $fileName, 1));
+            }
+        }
+    }
+
+    /**
+     * Create ZIP archive containing work dir.
+     * @param string $fileName
+     */
+    private function createArchive(string $fileName): void
+    {
+        $zipArchive = new \ZipArchive();
+        if (true !== $zipArchive->open($fileName, (\ZipArchive::CREATE | \ZipArchive::OVERWRITE))) {
+            throw new EpubException("Failed to create publication ({$fileName}).");
+        }
+        $this->includeDir($zipArchive, $this->tmpDir);
+        if ($zipArchive->status != \ZIPARCHIVE::ER_OK) {
+            throw new EpubException("Can not build publication ({$fileName}).");
+        }
+        $zipArchive->close();
     }
 
     private function explodeString($str, $parts)
@@ -112,11 +464,11 @@ FOOTER;
     }
 
     /**
-     * Create UUID by RFC 4122 rules
+     * Create random UUID by RFC 4122 rules
      * (see https://www.cryptosys.net/pki/uuid-rfc4122.html).
      * @return string
      */
-    private function getUUID()
+    private function getUUID(): string
     {
         $str = $this->explodeString(strtoupper(bin2hex(random_bytes(16))), [8, 4, 3, 3, 12]);
         return $str[0]
@@ -135,7 +487,7 @@ FOOTER;
      * @param array $str structure
      * @throws EpubException
      */
-    private function createDirStr($root, $structure)
+    private function createDirStr(string $root, array $structure): void
     {
         foreach ($structure AS $key => $val) {
             $dir    = $root . DIRECTORY_SEPARATOR . $key;
@@ -151,10 +503,10 @@ FOOTER;
     /**
      * Create temp dir, working dir, directory structure & base files.
      * @param string $tmpDir
-     * @return string temp dir name
+     * @return string working directory path
      * @throws EpubException
      */
-    private function createWorkspace($tmpDir)
+    private function createWorkspace(string $tmpDir): string
     {
         if (!is_dir($tmpDir) || !is_writable($tmpDir)) {
             throw new EpubException("Temp dir is not dir or is not writable ({$tmpDir}).");
@@ -200,9 +552,9 @@ FOOTER;
     }
 
     /**
-     * Vytvoř soubor obálky.
+     * Create cover file.
      */
-    private function createCoverFile()
+    private function createCoverFile(): void
     {
         if (!$this->cover) {
             return;
@@ -228,9 +580,9 @@ body,div,img{text-align:center;padding:0;margin:0;border-width:0;height:100%;max
     }
 
     /**
-     * Vytvoř soubor content.opf.
+     * Create file "content.opf".
      */
-    private function createContentFile()
+    private function createContentFile(): void
     {
         $xw = new \XmlEasyWriter('1.0', 'UTF-8', 'yes');
 
@@ -388,7 +740,7 @@ body,div,img{text-align:center;padding:0;margin:0;border-width:0;height:100%;max
     /**
      * Vytvoř soubor toc.ncx.
      */
-    private function createTocFile()
+    private function createTocFile(): void
     {
         $playOrder  = 1;
         $xw = new \XmlEasyWriter('1.0', 'UTF-8', 'no');
@@ -490,331 +842,36 @@ body,div,img{text-align:center;padding:0;margin:0;border-width:0;height:100%;max
         file_put_contents($this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . 'toc.ncx', $xw->outputMemory());
     }
 
-    /**
-     * Nastav popis publikace.
-     * @param string $title
-     * @return Book
-     */
-    public function setDescription($description)
+    private function createHtmlContent()
     {
-        $this->description  = $description;
-        return $this;
-    }
-
-    /**
-     * Nastav vydavatele publikace.
-     * @param string $publisher
-     * @return Book
-     */
-    public function setPublisher($publisher)
-    {
-        $this->publisher    = $publisher;
-        return $this;
-    }
-
-    /**
-     * Nastav titul publikace.
-     * @param string $title
-     * @return Book
-     */
-    public function setTitle($title)
-    {
-        $this->title        = $title;
-        return $this;
-    }
-
-    /**
-     * Přidej tvůrce publikace.
-     * @param string $title
-     * @return Book
-     */
-    public function addCreator($role, $name, $nameFileAs = NULL)
-    {
-        $this->creators[]   = new Creator($role, $name, $nameFileAs);
-        return $this;
-    }
-
-    /**
-     * Nastav jazyk publikace.
-     * @param string $language
-     * @return Book
-     */
-    public function setLanguage($language)
-    {
-        $this->language     = $language;
-        return $this;
-    }
-
-    /**
-     * Přidej knihu do publikace.
-     * @param string $bookTitle
-     * @return Book
-     */
-    public function addBook($bookTitle)
-    {
-        $book               = new Book($this, sizeof($this->books) + 1, $bookTitle);
-        $this->books[]      = $book;
-        $this->activeBook   = $book;
-        return $book;
-    }
-
-    /**
-     * @return Book
-     */
-    /*
-    public function getActiveBook()
-    {
-        return $this->activeBook;
-    }
-    */
-
-    /**
-     * Vrať seznam knih.
-     * @return array
-     */
-    public function getBooks()
-    {
-        return $this->books;
-    }
-
-    /**
-     * Přidej obecný soubor.
-     * @param string filename
-     * @param string dir
-     * @return string
-     * @throws EpubException
-     */
-    private function addFile($fileName, $dir)
-    {
-        if (!is_file($fileName) || (!is_readable($fileName))) {
-            throw new EpubException("Not file or not readable file ({$fileName}).");
-        }
-        $name   = $dir . DIRECTORY_SEPARATOR . basename($fileName);
-        if (!copy($fileName, $this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . $name)) {
-            throw new EpubException("Can not copy file to temporary directory ({$fileName}).");
-        }
-        return $name;
-    }
-
-    /**
-     * Přidej obrázek.
-     * @param string filename
-     * @return Epub
-     * @throws EpubException
-     */
-    public function addImage($fileName)
-    {
-        $this->images[] = $this->addFile($fileName, static::IMAGES);
-        return $this;
-    }
-
-    /**
-     * Přidej obrázek "Cover".
-     * @param string filename
-     * @param string cover title
-     * @return Epub
-     * @throws EpubException
-     */
-    public function addCover($fileName, $coverTitle = NULL)
-    {
-        $this->cover    = $this->addFile($fileName, static::IMAGES);
-        if ($coverTitle) {
-            $this->coverTitle   = $coverTitle;
-        }
-        return $this;
-    }
-
-    /**
-     * Přidej CSS styl.
-     * @param string filename
-     * @return Epub
-     * @throws EpubException
-     */
-    public function addStyle($fileName)
-    {
-        $this->styles[] = $this->addFile($fileName, static::STYLES);
-        return $this;
-    }
-
-    /**
-     * Přidej font.
-     * @param string filename
-     * @return Epub
-     * @throws EpubException
-     */
-    public function addFont($fileName)
-    {
-        $this->fonts[]  = $this->addFile($fileName, static::FONTS);
-        return $this;
-    }
-
-    /**
-     * Přidej subjekt (klíčové slovo).
-     * @param string $subject
-     * @return Epub
-     */
-    public function addSubject($subject)
-    {
-        $this->subjects[]   = $subject;
-        return $this;
-    }
-
-    /**
-     * Nastav hlavičku pro každou kapitolu.
-     * @param string $html HTML text hlavičky
-     * @return Epub
-     */
-    public function setChapterHeader($html)
-    {
-        $this->chapterHeader    = $html;
-        return $this;
-    }
-
-    /**
-     * Nastav hlavičku pro každou kapitolu ze souboru.
-     * @param string $fileName soubor textu hlavičky
-     * @return Epub
-     * @throws EpubException
-     */
-    public function setChapterHeaderFile($fileName)
-    {
-        if (!is_file($fileName) || (!is_readable($fileName))) {
-            throw new EpubException("Header is not file or is not readable ({$fileName}).");
-        }
-        return $this->setChapterHeader(file_get_contents($fileName));
-    }
-
-    /**
-     * Nastav patičku pro každou kapitolu.
-     * @param string $html HTML text patičky
-     * @return Epub
-     */
-    public function setChapterFooter($html)
-    {
-        $this->chapterFooter    = $html;
-        return $this;
-    }
-
-    /**
-     * Nastav patičku pro každou kapitolu ze souboru.
-     * @param string $fileName soubor textu patičky
-     * @return Epub
-     * @throws EpubException
-     */
-    public function setChapterFooterFile($fileName)
-    {
-        if (!is_file($fileName) || (!is_readable($fileName))) {
-            throw new EpubException("Footer is not file or is not readable ({$fileName}).");
-        }
-        return $this->setChapterFooter(file_get_contents($fileName));
-    }
-
-    /**
-     * Vydej cestu k pracovnímu adresáři.
-     * @return string
-     */
-    public function getTempDir()
-    {
-        return $this->tmpDir;
-    }
-
-    public function clearTemp()
-    {
-        SpaceTools::purgeDir($this->getTempDir());
-    }
-
-    /**
-     * Vytvoř epub.
-     */
-    public function save($outputFile)
-    {
-        // Convert HTML entities:
-        if ($this->decodeEntities) {
-            $this->entitiesDecode();
-        }
-
-        // Wrap chapter files:
-        if ($this->chapterHeader || $this->chapterFooter) {
-            $this->wrapChapter();
-        }
-
-        // Create cover, TOC, content:
-        $this->createCoverFile();
-        $this->createTocFile();
-        $this->createContentFile();
-
-        // Create epub:
-        /*
-        if (file_exists($outputFile)) {
-            unlink($outputFile);
-        }
-        // @@TODO: Vytvořit epub (ZIP adresáře)
-        $dir    = getcwd();
-        chdir($this->tmpDir);
-        exec("zip {$outputFile} -X mimetype");
-        exec("zip {$outputFile} -r " . static::OEBPS . DIRECTORY_SEPARATOR . '*');
-        exec("zip {$outputFile} -r " . static::META_INF . DIRECTORY_SEPARATOR . '*');
-        chdir($dir);
-        */
-        $this->createArchive($outputFile);
-
-        // ebook-convert votocek-jiri--polamal-me-pradedecek.epub .mobi --share-not-sync
-    }
-
-    private function entitiesDecode()
-    {
-        foreach ($this->books AS $book) {
-            foreach ($book->getChapters() AS $chapter) {
-                $fileName   = $this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . static::TEXTS . DIRECTORY_SEPARATOR . $chapter->getFileName();
-                $fileCont   = file_get_contents($fileName);
-                file_put_contents(
-                    $fileName,
-                    html_entity_decode($fileCont)
-                );
+        if (count($this->books) === 1) {
+            $html =
+                "<h3>{$this->contentTitle}</h3>"
+                . PHP_EOL
+                . "<ul>"
+                . PHP_EOL
+                ;
+            foreach ($this->books[0]->getChapters() as $chapter) {
+                $html .=
+                    '<li>'
+                    . "<a href=\"{$chapter->getFilename()}\">{$chapter->getTitle()}</a>"
+                    . '</li>'
+                    . PHP_EOL
+                    ;
             }
+            $html .=
+                "<li><a href=\"content.html\">{$this->contentTitle}</a></li>"
+                . PHP_EOL
+                . '</ul>'
+                . PHP_EOL
+                ;
+            $this->books[0]->addChapterHtml($html, 'content.html')->setTitle($this->contentTitle);
+        } else {
+            // Not implemented for multiple books publications
+            // foreach ($this->books as $book) {
+            // }
+            // @@todo: implement
         }
     }
 
-    private function wrapChapter()
-    {
-        foreach ($this->books AS $book) {
-            foreach ($book->getChapters() AS $chapter) {
-                $fileName   = $this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . static::TEXTS . DIRECTORY_SEPARATOR . $chapter->getFileName();
-                $fileCont   = file_get_contents($fileName);
-                file_put_contents(
-                    $fileName,
-                    ($this->chapterHeader ?: '') . $fileCont . ($this->chapterFooter ?: '')
-                );
-            }
-        }
-    }
-
-    private function includeDir(\ZipArchive &$archive, string $dirName, string $root = '')
-    {
-        $dir = opendir($dirName);
-        while ($fileName = readdir($dir)) {
-            if (in_array($fileName, ['.', '..'])) {
-                continue;
-            }
-            $fullName = $dirName . DIRECTORY_SEPARATOR . $fileName;
-            if (is_dir($fullName)) {
-                $this->includeDir($archive, $fullName, $root . DIRECTORY_SEPARATOR . $fileName);
-            } else {
-                $archive->addFile($fullName, substr($root . DIRECTORY_SEPARATOR . $fileName, 1));
-            }
-        }
-    }
-
-    private function createArchive(string $fileName)
-    {
-        $zipArchive = new \ZipArchive();
-        if (true !== $zipArchive->open($fileName, (\ZipArchive::CREATE | \ZipArchive::OVERWRITE))) {
-            throw new EpubException("Failed to create publication ({$fileName}).");
-        }
-        $this->includeDir($zipArchive, $this->tmpDir);
-        if ($zipArchive->status != \ZIPARCHIVE::ER_OK) {
-            throw new EpubException("Can not build publication ({$fileName}).");
-        }
-        $zipArchive->close();
-    }
 }

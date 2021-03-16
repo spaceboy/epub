@@ -8,11 +8,11 @@ class Chapter {
     /** @var string chapter filename */
     private $fileName;
 
-    /** @var boolean */
-    //private $cover  = FALSE;
-
     /** @var string */
     private $title;
+
+    /** @var bool */
+    private bool $wrap = true;
 
     /** @var string[] list of styles */
     private array $styles;
@@ -37,25 +37,24 @@ class Chapter {
     }
 
     /**
+     * Wrap setter.
+     * @param bool $wrap
      * @return Chapter
      */
-    /*
-    public function setAsCover()
+    public function setWrap(bool $wrap): self
     {
-        $this->cover    = TRUE;
+        $this->wrap = $wrap;
         return $this;
     }
-    */
 
     /**
-     * @return boolean
+     * Wrap getter.
+     * @return bool
      */
-    /*
-    public function isCover()
+    public function getWrap(): bool
     {
-        return $this->cover;
+        return $this->wrap;
     }
-    */
 
     /**
      * Chapter title setter.
