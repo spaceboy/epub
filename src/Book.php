@@ -22,6 +22,9 @@ class Book {
     /** @var Chapter[] */
     private $chapters   = [];
 
+    /** @var \Closure|null method called before publacition is build (called with @param Epub &$epub, @param Book &$book) */
+    private ?\Closure $beforeBuild = null;
+
 
     /**
      * Class constructor.
@@ -81,7 +84,7 @@ class Book {
         )) {
             throw new EpubException("Can not create chapter file in temporary directory.");
         }
-        return $this->chapters[$newFileName] = new Chapter($newFileName);
+        return $this->chapters[$newFileName] = new Chapter($this, $newFileName);
     }
 
     /**
@@ -99,7 +102,7 @@ class Book {
         if (!copy($fileName, $this->epub->getTempDir() . DIRECTORY_SEPARATOR . Epub::OEBPS . DIRECTORY_SEPARATOR . Epub::TEXTS . DIRECTORY_SEPARATOR . $newFileName)) {
             throw new EpubException("Can not copy chapter to temporary directory ({$fileName}).");
         }
-        return $this->chapters[$newFileName]    = new Chapter($newFileName);
+        return $this->chapters[$newFileName] = new Chapter($this, $newFileName);
     }
 
     /**
@@ -111,4 +114,36 @@ class Book {
         return $this->chapters;
     }
 
+    /**
+     * Return epub.
+     * @return Epub
+     */
+    public function getEpub(): Epub
+    {
+        return $this->epub;
+    }
+
+    /**
+     * Set method runned before epub build.
+     * @param callable $function
+     * @return Book
+     */
+    public function runBeforeBuild(callable $function): self
+    {
+        $this->beforeBuild = \Closure::fromCallable($function);
+        return $this;
+    }
+
+    /**
+     * Run function declared by "runBeforeBuild" (if any) and run "before" functions on each chapter.
+     */
+    public function manageBeforeFunctions(Epub $epub): void
+    {
+        if (\is_callable($this->beforeBuild)) {
+            call_user_func($this->beforeBuild, $this);
+        }
+        foreach ($this->chapters as $chapter) {
+            $chapter->manageBeforeFunction($epub, $this);
+        }
+    }
 }

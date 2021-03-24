@@ -80,6 +80,13 @@ FOOTER;
     /** @var bool content position (true = at beginning; false = at the end of publication) */
     private bool $contentAtBegin;
 
+    /** @var string PHTML template file full path and name */
+    private string $templateCover = __DIR__ . '/templates/cover.phtml';
+
+    /** @var \Closure|null method called before publacition is build (called with @param Epub &$epub) */
+    private ?\Closure $beforeBuild = null;
+
+
     const   META_INF    = 'META-INF';
     const   OEBPS       = 'OEBPS';
     const   FONTS       = 'Fonts';
@@ -87,6 +94,7 @@ FOOTER;
     const   STYLES      = 'Styles';
     const   TEXTS       = 'Text';
     const   COVER       = 'cover.xhtml';
+
 
     /**
      * Class constructor.
@@ -326,16 +334,22 @@ FOOTER;
     }
 
     /**
+     * Set method runned before epub build.
+     * @param callable $function
+     * @return Epub
+     */
+    public function runBeforeBuild(callable $function): self
+    {
+        $this->beforeBuild = \Closure::fromCallable($function);
+        return $this;
+    }
+
+    /**
      * Create epub.
      * @param string $outputFile
      */
     public function save(string $outputFile): void
     {
-        // Create HTML content.
-        if ($this->contentTitle !== null) {
-            $this->createHtmlContent();
-        }
-
         // Convert HTML entities:
         if ($this->decodeEntities) {
             $this->entitiesDecode();
@@ -344,6 +358,14 @@ FOOTER;
         // Wrap chapter files:
         if ($this->chapterHeader || $this->chapterFooter) {
             $this->wrapChapter();
+        }
+
+        // Run "beforeBuild" functions:
+        $this->manageBeforeFunctions();
+
+        // Create HTML content.
+        if ($this->contentTitle !== null) {
+            $this->createHtmlContent();
         }
 
         // Create cover, TOC, content:
@@ -563,20 +585,12 @@ FOOTER;
         if (file_exists($fileName)) {
             return;
         }
-        file_put_contents($fileName, '<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-<title>Obalka</title>
-<style type="text/css">
-@page{padding:0;margin:0;}
-body,div,img{text-align:center;padding:0;margin:0;border-width:0;height:100%;max-width:100%;}
-</style>
-</head>
-<body>
-<div><img alt="cover" src="../' . $this->cover . '"/></div>
-</body>
-</html>');
+        // Relative position from epub root:
+        $cover = '../' . $this->cover;
+        // Create content from PHTML:
+        ob_start();
+        include($this->templateCover);
+        file_put_contents($fileName, ob_get_clean());
     }
 
     /**
@@ -689,7 +703,7 @@ body,div,img{text-align:center;padding:0;margin:0;border-width:0;height:100%;max
             foreach ($this->images AS $fileName) {
                 $xw->insertElement('item', [
                     'href'          => $fileName,
-                    'id'            => 'txt' . basename($fileName),
+                    'id'            => 'img' . basename($fileName),
                     'media-type'    => mime_content_type($this->tmpDir . DIRECTORY_SEPARATOR . static::OEBPS . DIRECTORY_SEPARATOR . $fileName),
                 ]);
             }
@@ -874,4 +888,13 @@ body,div,img{text-align:center;padding:0;margin:0;border-width:0;height:100%;max
         }
     }
 
+    private function manageBeforeFunctions(): void
+    {
+        if (is_callable($this->beforeBuild)) {
+            call_user_func($this->beforeBuild, $this);
+        }
+        foreach ($this->books as $book) {
+            $book->manageBeforeFunctions($this);
+        }
+    }
 }
